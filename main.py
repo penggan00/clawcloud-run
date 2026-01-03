@@ -327,49 +327,136 @@ class AutoLogin:
         return False
     
     def wait_two_factor_mobile(self, page):
-        """等待 GitHub Mobile 两步验证批准，并把数字截图提前发到电报"""
-        self.log(f"需要两步验证（GitHub Mobile），等待 {TWO_FACTOR_WAIT} 秒...", "WARN")
+        """等待 GitHub Mobile 两步验证批准，并处理选择验证方式"""
+        self.log(f"需要两步验证，等待 {TWO_FACTOR_WAIT} 秒...", "WARN")
         
-        # 先截图并立刻发出去（让你看到数字）
-        shot = self.shot(page, "两步验证_mobile")
-        self.tg.send(f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
-
-请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
-等待时间：{TWO_FACTOR_WAIT} 秒""")
-        if shot:
-            self.tg.photo(shot, "两步验证页面（数字在图里）")
+        # 先检查当前页面状态
+        shot = self.shot(page, "两步验证_初始")
         
-        # 不要频繁 reload，避免把流程刷回登录页
-        for i in range(TWO_FACTOR_WAIT):
-            time.sleep(1)
-            
-            url = page.url
-            
-            # 如果离开 two-factor 流程页面，认为通过
-            if "github.com/sessions/two-factor/" not in url:
-                self.log("两步验证通过！", "SUCCESS")
-                self.tg.send("✅ <b>两步验证通过</b>")
-                return True
-            
-            # 如果被刷回登录页，说明这次流程断了（不要硬等）
-            if "github.com/login" in url:
-                self.log("两步验证后回到了登录页，需重新登录", "ERROR")
-                return False
-            
-            # 每 10 秒打印一次，并补发一次截图（防止你没看到数字）
-            if i % 10 == 0 and i != 0:
-                self.log(f"  等待... ({i}/{TWO_FACTOR_WAIT}秒)")
-                shot = self.shot(page, f"两步验证_{i}s")
-                if shot:
-                    self.tg.photo(shot, f"两步验证页面（第{i}秒）")
-            
-            # 只在 30 秒、60 秒... 做一次轻刷新（可选，频率很低）
-            if i % 30 == 0 and i != 0:
+        # 先尝试点击"More options"查看所有选项
+        more_options_selectors = [
+            'button:has-text("More options")',
+            'a:has-text("More options")',
+            'button:has-text("Verify another way")',
+            'button[data-test-selector="use-another-method"]'
+        ]
+        
+        for sel in more_options_selectors:
+            try:
+                el = page.locator(sel).first
+                if el.is_visible(timeout=3000):
+                    el.click()
+                    time.sleep(2)
+                    self.log("已展开更多选项", "SUCCESS")
+                    shot = self.shot(page, "两步验证_更多选项")
+                    break
+            except:
+                pass
+        
+        # 现在优先查找并选择手机App验证
+        mobile_selectors = [
+            'button:has-text("GitHub Mobile")',
+            'button:has-text("Use GitHub Mobile")',
+            'a:has-text("GitHub Mobile")',
+            'button[data-test-selector="use-recovery-code-button"]:has-text("Mobile")',
+            'button:has-text("Verify with GitHub Mobile")'
+        ]
+        
+        found_mobile = False
+        for sel in mobile_selectors:
+            try:
+                el = page.locator(sel).first
+                if el.is_visible(timeout=3000):
+                    el.click()
+                    found_mobile = True
+                    self.log("已选择 GitHub Mobile 验证", "SUCCESS")
+                    time.sleep(2)
+                    page.wait_for_load_state('networkidle', timeout=15000)
+                    shot = self.shot(page, "两步验证_mobile已选择")
+                    break
+            except:
+                pass
+        
+        # 如果没找到手机App选项，检查是否已经是手机验证页面
+        if not found_mobile:
+            # 检查是否已经在手机验证页面
+            if 'two-factor/mobile' in page.url:
+                found_mobile = True
+                self.log("已在 GitHub Mobile 验证页面", "INFO")
+            else:
+                # 检查是否有数字输入提示（手机App验证的特征）
                 try:
-                    page.reload(timeout=30000)
-                    page.wait_for_load_state('domcontentloaded', timeout=30000)
+                    # 手机验证通常显示 "Confirm in the GitHub app" 和数字
+                    mobile_texts = page.locator('text=/Confirm.*in.*GitHub.*app/i').first
+                    if mobile_texts.is_visible(timeout=2000):
+                        found_mobile = True
+                        self.log("检测到 GitHub Mobile 验证提示", "SUCCESS")
                 except:
                     pass
+        
+        # 发送通知
+        if found_mobile:
+            self.tg.send(f"""⚠️ <b>需要两步验证（GitHub Mobile）</b>
+
+    请打开手机 GitHub App 批准本次登录（会让你确认一个数字）。
+    等待时间：{TWO_FACTOR_WAIT} 秒""")
+            
+            if shot:
+                self.tg.photo(shot, "GitHub Mobile 验证页面")
+            
+            # 等待手机批准
+            for i in range(TWO_FACTOR_WAIT):
+                time.sleep(1)
+                
+                url = page.url
+                
+                # 如果离开 two-factor 流程页面，认为通过
+                if "github.com/sessions/two-factor/" not in url:
+                    self.log("两步验证通过！", "SUCCESS")
+                    self.tg.send("✅ <b>两步验证通过</b>")
+                    return True
+                
+                # 如果被刷回登录页，说明这次流程断了
+                if "github.com/login" in url:
+                    self.log("两步验证后回到了登录页，需重新登录", "ERROR")
+                    return False
+                
+                # 每 10 秒更新一次状态
+                if i % 10 == 0 and i != 0:
+                    self.log(f"  等待手机批准... ({i}/{TWO_FACTOR_WAIT}秒)")
+                    # 重新截图（数字可能已刷新）
+                    if i % 30 == 0:  # 每30秒发一次截图
+                        shot = self.shot(page, f"两步验证_{i}s")
+                        if shot:
+                            self.tg.photo(shot, f"仍在等待手机批准... ({i}秒)")
+                
+                # 每 30 秒刷新一次页面（以防超时）
+                if i % 30 == 0 and i != 0:
+                    try:
+                        page.reload(timeout=30000)
+                        page.wait_for_load_state('domcontentloaded', timeout=30000)
+                        # 检查是否还停留在2FA页面
+                        if "github.com/sessions/two-factor/" in page.url:
+                            # 再次检查是否在手机验证页面
+                            if 'two-factor/mobile' not in page.url:
+                                # 可能需要重新选择
+                                self.log("页面刷新后需要重新选择验证方式", "INFO")
+                                # 尝试再次选择手机验证
+                                for sel in mobile_selectors:
+                                    try:
+                                        el = page.locator(sel).first
+                                        if el.is_visible(timeout=2000):
+                                            el.click()
+                                            time.sleep(2)
+                                            break
+                                    except:
+                                        pass
+                    except:
+                        pass
+        else:
+            # 如果找不到手机App选项，退回到验证码输入
+            self.log("未找到 GitHub Mobile 选项，将使用验证码输入", "WARN")
+            return self.handle_2fa_code_input(page)
         
         self.log("两步验证超时", "ERROR")
         self.tg.send("❌ <b>两步验证超时</b>")
@@ -520,42 +607,153 @@ class AutoLogin:
             page.wait_for_load_state('networkidle', timeout=30000)
             self.shot(page, "验证后")
         
-        # 2FA
-        if 'two-factor' in page.url:
-            self.log("需要两步验证！", "WARN")
-            self.shot(page, "两步验证")
-            
-            # GitHub Mobile：等待你在手机上批准
-            if 'two-factor/mobile' in page.url:
-                if not self.wait_two_factor_mobile(page):
-                    return False
-                # 通过后等页面稳定
-                try:
-                    page.wait_for_load_state('networkidle', timeout=30000)
-                    time.sleep(2)
-                except:
-                    pass
-            
-            else:
-                # 其它两步验证方式（TOTP/恢复码等），尝试通过 Telegram 输入验证码
-                if not self.handle_2fa_code_input(page):
-                    return False
-                # 通过后等页面稳定
-                try:
-                    page.wait_for_load_state('networkidle', timeout=30000)
-                    time.sleep(2)
-                except:
-                    pass
-        
-        # 错误
+        # 检查是否有错误
         try:
             err = page.locator('.flash-error').first
             if err.is_visible(timeout=2000):
-                self.log(f"错误: {err.inner_text()}", "ERROR")
-                return False
+                error_text = err.inner_text()
+                self.log(f"错误: {error_text}", "ERROR")
+                
+                # 检查是否是 2FA 相关错误
+                if 'two-factor' in error_text.lower() or '2fa' in error_text.lower():
+                    self.log("检测到 2FA 错误，可能需要重新处理", "WARN")
+                    # 尝试重新加载页面
+                    page.reload()
+                    time.sleep(2)
+                    page.wait_for_load_state('networkidle', timeout=30000)
         except:
             pass
         
+        # 2FA 处理 - 增强版
+        if 'two-factor' in page.url or '/sessions/two-factor' in page.url:
+            self.log("需要两步验证！", "WARN")
+            self.shot(page, "两步验证")
+            
+            # 检查当前 URL 确定验证类型
+            current_url = page.url
+            
+            # 优先处理手机App验证
+            if 'two-factor/mobile' in current_url or 'two-factor/auth' in current_url:
+                self.log("检测到 GitHub Mobile 验证页面", "INFO")
+                if not self.wait_two_factor_mobile(page):
+                    # 如果手机验证失败，尝试验证码方式
+                    self.log("手机验证失败，尝试验证码方式", "WARN")
+                    if not self.handle_2fa_code_input(page):
+                        return False
+            else:
+                # 非手机验证页面，先尝试展开选项
+                self.log("检测到 2FA 页面，但不确定类型", "INFO")
+                
+                # 先尝试等待几秒，看页面是否稳定
+                time.sleep(2)
+                
+                # 尝试截图识别当前页面状态
+                self.shot(page, "2fa_初始状态")
+                
+                # 首先检查是否已经显示数字（手机验证）
+                try:
+                    mobile_indicators = [
+                        'text=/Confirm.*in.*GitHub.*app/i',
+                        'text=/Open.*GitHub.*app.*confirm/i',
+                        'text=/Check.*GitHub.*app.*for.*notification/i',
+                        'h2:has-text("GitHub Mobile")'
+                    ]
+                    for indicator in mobile_indicators:
+                        try:
+                            el = page.locator(indicator).first
+                            if el.is_visible(timeout=2000):
+                                self.log("检测到手机验证提示", "SUCCESS")
+                                if not self.wait_two_factor_mobile(page):
+                                    return False
+                                break
+                        except:
+                            continue
+                except:
+                    pass
+                
+                # 如果没有检测到手机验证，使用增强的 wait_two_factor_mobile 方法
+                # 它会先尝试选择手机验证，不行再退回到验证码
+                if not self.wait_two_factor_mobile(page):
+                    return False
+            
+            # 验证后检查状态
+            time.sleep(2)
+            try:
+                page.wait_for_load_state('networkidle', timeout=30000)
+                
+                # 检查是否仍然在 2FA 页面
+                if 'two-factor' in page.url or '/sessions/two-factor' in page.url:
+                    self.log("仍在 2FA 页面，可能有错误", "WARN")
+                    self.shot(page, "2fa_可能错误")
+                    
+                    # 检查错误消息
+                    try:
+                        err = page.locator('.flash-error, .error, [class*="error"]').first
+                        if err.is_visible(timeout=2000):
+                            error_text = err.inner_text()
+                            self.log(f"2FA 错误: {error_text}", "ERROR")
+                            
+                            # 如果是验证码错误，尝试重新输入
+                            if 'code' in error_text.lower() or 'invalid' in error_text.lower():
+                                self.log("验证码错误，尝试重新输入", "WARN")
+                                if not self.handle_2fa_code_input(page):
+                                    return False
+                    except:
+                        pass
+            except:
+                pass
+        
+        # 检查是否成功登录（重定向到授权页面或首页）
+        try:
+            final_url = page.url
+            self.log(f"最终 URL: {final_url}", "INFO")
+            
+            # 成功的情况：
+            # 1. OAuth 授权页面
+            # 2. GitHub 首页
+            # 3. 跳转到其他页面（非登录页）
+            success_indicators = [
+                'github.com/login/oauth/authorize',
+                'github.com/',
+                'github.com/dashboard',
+                'github.com/settings/profile'
+            ]
+            
+            is_success = any(indicator in final_url for indicator in success_indicators)
+            is_login_page = 'github.com/login' in final_url
+            
+            if is_success and not is_login_page:
+                self.log("GitHub 登录成功！", "SUCCESS")
+                self.shot(page, "github_登录成功")
+                return True
+            elif is_login_page:
+                self.log("仍然在登录页面，可能登录失败", "ERROR")
+                self.shot(page, "仍在登录页")
+                return False
+            else:
+                # 其他情况，检查页面元素判断
+                try:
+                    avatar = page.locator('.avatar-user').first
+                    if avatar.is_visible(timeout=3000):
+                        self.log("检测到用户头像，登录成功", "SUCCESS")
+                        return True
+                except:
+                    pass
+                
+                # 检查是否有"Sign out"按钮
+                try:
+                    signout = page.locator('button:has-text("Sign out")').first
+                    if signout.is_visible(timeout=2000):
+                        self.log("检测到登出按钮，登录成功", "SUCCESS")
+                        return True
+                except:
+                    pass
+        
+        except Exception as e:
+            self.log(f"登录状态检查异常: {e}", "WARN")
+        
+        # 默认返回 True（在某些边缘情况下可能仍然成功）
+        self.log("GitHub 登录流程完成", "INFO")
         return True
     
     def oauth(self, page):

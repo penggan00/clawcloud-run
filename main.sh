@@ -9,7 +9,7 @@ fi
 # 等待2秒确保进程完全终止
 sleep 2
 # 启动main.py脚本
-source ~/main/rss_venv/bin/activate
-nohup python3 ~/main/main.py > /dev/null 2>&1 &
+source ~/clawcloud-run/rss_venv/bin/activate
+nohup python3 ~/clawcloud-run/main.py > /dev/null 2>&1 &
 
 echo "脚本执行成功"

@@ -1,6 +1,20 @@
-# ⭐ Star 星星走起 动动发财手点点 ⭐
-
-## ClawCloud 官网(GitHub注册送5美元地址)：[run.claw.cloud](https://console.run.claw.cloud/signin?link=M9P7GXP3M3W5)
+git clone https://github.com/penggan00/clawcloud-run.git
+cd clawcloud-run
+python3 -m venv rss_venv
+# 激活虚拟环境
+source rss_venv/bin/activate
+# 一次性安装所有库
+pip install requests python-dotenv playwright
+# 安装 Playwright 浏览器
+python -m playwright install
+# 安装 Playwright 所需的系统依赖
+apt install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpangocairo-1.0-0 libx11-xcb1 libxss1 libgtk-3-0
+# 或者安装完整依赖包
+apt install -y wget gnupg2 software-properties-common
+wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list
+apt update
+apt install -y google-chrome-stable
 
 > 自动登录 ClawCloud，保持账户活跃，支持设备验证 + 两步验证
 
