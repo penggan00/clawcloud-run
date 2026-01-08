@@ -1,20 +1,48 @@
+#crontab -e每月1号 15 号 
+#20 8 1,15 * * /bin/bash ~/clawcloud-run/main.sh
 git clone https://github.com/penggan00/clawcloud-run.git
 cd clawcloud-run
+apt install python3.11-venv
 python3 -m venv rss_venv
 # 激活虚拟环境
 source rss_venv/bin/activate
 # 一次性安装所有库
-pip install requests python-dotenv playwright
-# 安装 Playwright 浏览器
-python -m playwright install
-# 安装 Playwright 所需的系统依赖
-apt install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpangocairo-1.0-0 libx11-xcb1 libxss1 libgtk-3-0
-# 或者安装完整依赖包
-apt install -y wget gnupg2 software-properties-common
-wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
-echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list
-apt update
-apt install -y google-chrome-stable
+pip uninstall playwright -y
+pip install playwright requests python-dotenv pynacl
+# 安装 playwright 浏览器
+python -m playwright install chromium
+# 更新并安装依赖
+sudo apt-get update
+sudo apt-get install -y \
+    libnss3 \
+    libnspr4 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libgbm1 \
+    libasound2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxshmfence1 \
+    libpangocairo-1.0-0 \
+    libcups2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxext6 \
+    libxi6 \
+    libxfixes3 \
+    libxrender1 \
+    libxtst6 \
+    wget \
+    curl
 
 > 自动登录 ClawCloud，保持账户活跃，支持设备验证 + 两步验证
 
